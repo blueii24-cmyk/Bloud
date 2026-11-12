@@ -40,10 +40,19 @@ services/ (Supabase when configured, else local mocks)
 - **Drive Music** (`src/pages/DriveMusic.tsx`): local folder scanning via
   the File System Access API — files never leave the device.
 
-The app runs without a login wall (demo mode): all devices share one
-library under user `me`. RLS policies are permissive for `anon` +
-`authenticated` to match. When Supabase Auth is enabled, tighten policies
-to `auth.uid() = user_id` and link `app_users.auth_user_id`.
+### Login (Supabase Auth)
+
+`/#/login` is a Spotify-inspired sign-in / sign-up page built on Supabase Auth (email + password):
+
+* **Log in / Sign up** - `src/pages/Login.tsx`, state in `src/state/AuthContext.tsx`. Sign-up stores the display name in the user's `user_metadata.display_name`.
+* **Continue as guest** - the original demo mode (all devices share one library under user `me`). Stored as `bloud.guest` in `localStorage`.
+* **Route guard** - `src/components/auth/RequireAuth.tsx` wraps the app shell; anonymous visitors are redirected to `/login` and returned to where they were headed.
+* **Remember me** - off means the session ends when the browser is closed.
+* **Offline** - without `VITE_SUPABASE_*` env vars there is nothing to log in to, so the wall is skipped and the app runs on bundled data exactly as before.
+
+Supabase dashboard: enable the *Email* provider (Authentication -> Providers). If *Confirm email* is on, sign-up shows a "Check your inbox" step; turn it off for instant sign-in. Add your site URL under Authentication -> URL Configuration.
+
+RLS stays permissive for now (demo mode). To make libraries per-user, tighten policies to `auth.uid() = user_id` and link `app_users.auth_user_id`.
 
 ## Local development
 
