@@ -5,15 +5,23 @@
  */
 import type { Catalogue, LibraryState, UserId } from "../types";
 
-/** Read-only music catalogue. Future: Supabase Postgres + Google Drive file index. */
+/** Read-only music catalogue. Supabase Postgres when configured, else local data. */
 export interface CatalogueService {
   load(): Promise<Catalogue>;
 }
 
-/** Per-user library persistence. Future: Supabase tables guarded by Row Level Security. */
+/**
+ * Per-user library persistence.
+ * `load`/`save` are the local (synchronous) cache; when Supabase is
+ * configured the context additionally syncs via `loadRemote`/`saveRemote`
+ * and subscribes to `subscribeRemote` for cross-device updates.
+ */
 export interface LibraryService {
   load(): LibraryState;
   save(state: LibraryState): void;
+  loadRemote?(): Promise<LibraryState | null>;
+  saveRemote?(prev: LibraryState, next: LibraryState): Promise<void>;
+  subscribeRemote?(onChange: () => void): () => void;
 }
 
 /** Audio/video output. Future: HTMLAudioElement / MediaSource streaming from Drive. */
@@ -40,11 +48,26 @@ export interface RoomState {
   error: string | null;
 }
 
-/** Shared listening session. Future: Supabase Realtime channel + presence. */
+export type PlaybackSyncType = "play" | "pause" | "seek" | "track" | "queue";
+
+export interface PlaybackSyncEvent {
+  type: PlaybackSyncType;
+  trackId: string | null;
+  positionSec: number;
+  isPlaying: boolean;
+  queueTrackIds: string[];
+  clientId: string;
+  ts: number;
+}
+
+/** Shared listening session. Supabase Realtime when configured, else local simulation. */
 export interface RoomService {
   getState(): RoomState;
   subscribe(listener: () => void): () => void;
   createRoom(): void;
   joinRoom(code: string): boolean;
   leaveRoom(): void;
+  broadcastPlayback?(event: Omit<PlaybackSyncEvent, "clientId" | "ts">): void;
+  onPlaybackEvent?(cb: (event: PlaybackSyncEvent) => void): () => void;
+  getPlayback?(): Promise<PlaybackSyncEvent | null>;
 }

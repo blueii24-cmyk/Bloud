@@ -3,6 +3,7 @@ import { Shell } from "./components/layout/Shell";
 import { CatalogueProvider } from "./state/CatalogueContext";
 import { LibraryProvider } from "./state/LibraryContext";
 import { PlayerProvider } from "./state/PlayerContext";
+import { RoomSyncBridge } from "./state/RoomContext";
 import { UIProvider } from "./state/UIContext";
 import Home from "./pages/Home";
 import Library from "./pages/Library";
@@ -22,6 +23,7 @@ export default function App() {
       <CatalogueProvider>
         <LibraryProvider>
           <PlayerProvider>
+            <RoomSyncBridge />
             <HashRouter>
               <Routes>
                 <Route element={<Shell />}>

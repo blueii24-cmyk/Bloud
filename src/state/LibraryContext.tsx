@@ -37,10 +37,71 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<LibraryState>(() => libraryService.load());
   const stateRef = useRef(state);
   stateRef.current = state;
+  const syncedRef = useRef<LibraryState>(state);
+  const hydratedRef = useRef(false);
+  const applyingRemoteRef = useRef(false);
 
+  // localStorage cache (instant, offline-first)
   useEffect(() => {
     libraryService.save(state);
   }, [state]);
+
+  // Supabase is the source of truth when configured: hydrate once on mount,
+  // then keep local state and the database in sync (debounced diff writes).
+  useEffect(() => {
+    if (!libraryService.loadRemote) return;
+    let alive = true;
+    libraryService
+      .loadRemote()
+      .then((remote) => {
+        if (!alive || !remote) return;
+        applyingRemoteRef.current = true;
+        syncedRef.current = remote;
+        setState(remote);
+        hydratedRef.current = true;
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!libraryService.saveRemote || !hydratedRef.current) return;
+    if (applyingRemoteRef.current) {
+      applyingRemoteRef.current = false;
+      return;
+    }
+    const prev = syncedRef.current;
+    const next = state;
+    const timer = setTimeout(() => {
+      void libraryService.saveRemote?.(prev, next).then(() => {
+        syncedRef.current = next;
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [state]);
+
+  // Cross-device updates: another device's write reloads our library.
+  useEffect(() => {
+    if (!libraryService.subscribeRemote || !libraryService.loadRemote) return;
+    let debounce: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = libraryService.subscribeRemote(() => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        void libraryService.loadRemote?.().then((remote) => {
+          if (!remote) return;
+          applyingRemoteRef.current = true;
+          syncedRef.current = remote;
+          setState(remote);
+        });
+      }, 400);
+    });
+    return () => {
+      clearTimeout(debounce);
+      unsubscribe();
+    };
+  }, []);
 
   const patch = useCallback((fn: (s: LibraryState) => Partial<LibraryState>) => {
     setState((s) => ({ ...s, ...fn(s) }));

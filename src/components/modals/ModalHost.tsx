@@ -7,6 +7,7 @@ import { useCatalogue } from "../../state/CatalogueContext";
 import { useLibrary } from "../../state/LibraryContext";
 import { usePlayer } from "../../state/PlayerContext";
 import { useRoom } from "../../state/RoomContext";
+import { isSupabaseConfigured } from "../../services";
 import { useUI } from "../../state/UIContext";
 import { searchCatalogue } from "../../utils/search";
 import { Artwork } from "../ui/Artwork";
@@ -264,7 +265,7 @@ function Devices({ onClose }: { onClose: () => void }) {
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-medium">{data.users.partner.name}'s device</p>
-            <p className="t-caption">{room.partnerOnline ? "Following your playback (simulated)" : "Not connected yet"}</p>
+            <p className="t-caption">{room.partnerOnline ? (isSupabaseConfigured ? "Following your playback in real time" : "Following your playback (simulated)") : "Not connected yet"}</p>
           </div>
         </div>
       )}
