@@ -7,7 +7,7 @@ playback sync. Built with React + Vite + Tailwind, backed by
 
 ## Live
 
-- **App:** https://bloud.vercel.app (Vercel production)
+- **App:** https://bloud-eta.vercel.app (Vercel production)
 - **Database:** Supabase project `Bloud` (`gaewxsaaaraafyeltiiv`, ap-south-1)
 
 ## Stack
