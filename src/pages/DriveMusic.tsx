@@ -6,6 +6,7 @@ import {
   ShieldCheck, Unplug,
 } from "lucide-react";
 import { Button } from "../components/ui/Buttons";
+import { LocalMusicPicker } from "../components/media/LocalMusicPicker";
 import { useAuth } from "../state/AuthContext";
 import { useGoogleDrive } from "../state/GoogleDriveContext";
 import {
@@ -20,6 +21,7 @@ import {
 import { cn } from "../utils/cn";
 
 const ROOT_FOLDER: GoogleDriveFolder = { id: "root", name: "My Drive" };
+type MusicSource = "device" | "google";
 
 function readableSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -44,6 +46,7 @@ export default function DriveMusic() {
   const playRequest = useRef(0);
   const objectUrl = useRef<string | null>(null);
 
+  const [source, setSource] = useState<MusicSource>("device");
   const [folderPath, setFolderPath] = useState<GoogleDriveFolder[]>([ROOT_FOLDER]);
   const [folders, setFolders] = useState<GoogleDriveFolder[]>([]);
   const [folderLoading, setFolderLoading] = useState(false);
@@ -82,8 +85,20 @@ export default function DriveMusic() {
     setPlaybackError("");
   };
 
+  const changeSource = (nextSource: MusicSource) => {
+    if (nextSource === source) return;
+    folderAbort.current?.abort();
+    scanAbort.current?.abort();
+    setFolderLoading(false);
+    setScanning(false);
+    setFolderError("");
+    setFilter("");
+    clearAudio();
+    setSource(nextSource);
+  };
+
   useEffect(() => {
-    if (drive.status !== "connected") {
+    if (source !== "google" || drive.status !== "connected") {
       folderAbort.current?.abort();
       setFolders([]);
       setFolderLoading(false);
@@ -110,16 +125,16 @@ export default function DriveMusic() {
         if (!controller.signal.aborted) setFolderLoading(false);
       });
     return () => controller.abort();
-  }, [drive.status, drive.accessToken, currentFolder.id, drive.disconnect, folderRefresh]);
+  }, [source, drive.status, drive.accessToken, currentFolder.id, drive.disconnect, folderRefresh]);
 
   useEffect(() => {
-    if (drive.status !== "disconnected") return;
+    if (source !== "google" || drive.status !== "disconnected") return;
     scanAbort.current?.abort();
     setScanning(false);
     setHasScanned(false);
     setSongs([]);
     clearAudio();
-  }, [drive.status]);
+  }, [source, drive.status]);
 
   useEffect(() => {
     return () => {
@@ -279,16 +294,40 @@ export default function DriveMusic() {
         <div>
           <p className="t-eyebrow">Personal library</p>
           <h1 className="t-page mt-1">Drive Music</h1>
-          <p className="t-meta mt-2 max-w-xl">Choose a Google Drive folder and stream supported audio without uploading it to Bloud.</p>
+          <p className="t-meta mt-2 max-w-xl">Play music from a folder on this device or browse your connected Google Drive.</p>
         </div>
-        {drive.status === "connected" && (
+        {source === "google" && drive.status === "connected" && (
           <Button variant="secondary" onClick={disconnectDrive}>
             <Unplug className="size-4" /> Disconnect Drive
           </Button>
         )}
       </header>
 
-      {!authenticated ? (
+      <div className="mt-6 flex w-fit max-w-full gap-1 rounded-full bg-white/[0.06] p-1" role="group" aria-label="Music source">
+        <button
+          type="button"
+          aria-pressed={source === "device"}
+          onClick={() => changeSource("device")}
+          className={cn("inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-semibold transition", source === "device" ? "bg-white text-black" : "text-fg-2 hover:text-fg")}
+        >
+          <HardDrive className="size-4" /> This device
+        </button>
+        <button
+          type="button"
+          aria-pressed={source === "google"}
+          onClick={() => changeSource("google")}
+          className={cn("inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-semibold transition", source === "google" ? "bg-white text-black" : "text-fg-2 hover:text-fg")}
+        >
+          <Cloud className="size-4" /> Google Drive
+        </button>
+      </div>
+
+      <div hidden={source !== "device"}>
+        <LocalMusicPicker active={source === "device"} />
+      </div>
+
+      {source === "google" ? (
+        !authenticated ? (
         <section className="mt-6 rounded-2xl border border-line bg-bg-2 p-6 sm:p-8">
           <span className="grid size-12 place-items-center rounded-2xl bg-accent/10 text-accent"><Cloud className="size-6" /></span>
           <h2 className="mt-4 text-lg font-semibold">Sign in to connect your Drive</h2>
@@ -501,11 +540,12 @@ export default function DriveMusic() {
             </section>
           )}
         </>
-      )}
+        )
+      ) : null}
 
       <div className="mt-4 flex flex-col gap-2 text-xs text-fg-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="flex items-center gap-2"><ShieldCheck className="size-4 shrink-0 text-accent" /> Drive audio is streamed through Bloud and isn't uploaded to your library.</p>
-        <p className="flex items-center gap-2"><Cloud className="size-4 shrink-0" /> Drive access stays optional and read-only.</p>
+        <p className="flex items-center gap-2"><ShieldCheck className="size-4 shrink-0 text-accent" /> {source === "device" ? "Your selected music stays on this device. Nothing is uploaded." : "Drive audio is streamed through Bloud and isn't uploaded to your library."}</p>
+        <p className="flex items-center gap-2">{source === "device" ? <HardDrive className="size-4 shrink-0" /> : <Cloud className="size-4 shrink-0" />} {source === "device" ? "Choose the folder again after refreshing; access is temporary." : "Drive access stays optional and read-only."}</p>
       </div>
     </div>
   );
