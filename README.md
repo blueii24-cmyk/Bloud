@@ -42,15 +42,15 @@ services/ (Supabase when configured, else local mocks)
 
 ### Login (Supabase Auth)
 
-`/#/login` is a Spotify-inspired sign-in / sign-up page built on Supabase Auth (email + password):
+`/#/login` is a minimal sign-in / sign-up page based on the **Bloud — Minimal login preview** HTML, wired to Supabase Auth (email + password):
 
-* **Log in / Sign up** - `src/pages/Login.tsx`, state in `src/state/AuthContext.tsx`. Sign-up stores the display name in the user's `user_metadata.display_name`.
+* **Log in / Sign up** - `src/pages/Login.tsx` and its scoped `Login.css`, with session state in `src/state/AuthContext.tsx`. Sign-up derives the display name from the email address because the supplied design has no name field.
 * **Continue as guest** - the original demo mode (all devices share one library under user `me`). Stored as `bloud.guest` in `localStorage`.
+* **Google button** - preview-only notice; Google OAuth is not configured.
 * **Route guard** - `src/components/auth/RequireAuth.tsx` wraps the app shell; anonymous visitors are redirected to `/login` and returned to where they were headed.
-* **Remember me** - off means the session ends when the browser is closed.
 * **Offline** - without `VITE_SUPABASE_*` env vars there is nothing to log in to, so the wall is skipped and the app runs on bundled data exactly as before.
 
-Supabase dashboard: enable the *Email* provider (Authentication -> Providers). If *Confirm email* is on, sign-up shows a "Check your inbox" step; turn it off for instant sign-in. Add your site URL under Authentication -> URL Configuration.
+Supabase dashboard: enable the *Email* provider (Authentication -> Providers). If email confirmation is enabled, sign-up displays a notice to check the inbox; enable auto-confirm for instant sign-in. Add your site URL under Authentication -> URL Configuration.
 
 RLS stays permissive for now (demo mode). To make libraries per-user, tighten policies to `auth.uid() = user_id` and link `app_users.auth_user_id`.
 
