@@ -4,6 +4,7 @@ import { cn } from "../../utils/cn";
 import { useRoom } from "../../state/RoomContext";
 import { AvatarPair } from "../ui/Avatar";
 import { Wordmark } from "../ui/Bits";
+import { AccountButton } from "../auth/AccountButton";
 
 const ROOTS = ["/", "/search", "/library", "/together"];
 
@@ -41,20 +42,23 @@ export function TopBar({ scrolled }: { scrolled: boolean }) {
         </div>
       </div>
 
-      <Link
-        to="/together"
-        aria-label={room.active ? "Listen Together room" : "Listen Together"}
-        className={cn("flex h-9 items-center gap-2 rounded-full transition duration-150 active:scale-95 lg:hidden", room.active ? "glass px-2.5" : circle)}
-      >
-        {room.active ? (
-          <>
-            <AvatarPair size="xs" partnerOnline={room.partnerOnline} />
-            {room.partnerOnline && <span className="size-1.5 rounded-full bg-accent" />}
-          </>
-        ) : (
-          <Users className="mx-auto size-[18px]" />
-        )}
-      </Link>
+      <div className="flex items-center gap-2">
+        <Link
+          to="/together"
+          aria-label={room.active ? "Listen Together room" : "Listen Together"}
+          className={cn("flex h-9 items-center gap-2 rounded-full transition duration-150 active:scale-95 lg:hidden", room.active ? "glass px-2.5" : circle)}
+        >
+          {room.active ? (
+            <>
+              <AvatarPair size="xs" partnerOnline={room.partnerOnline} />
+              {room.partnerOnline && <span className="size-1.5 rounded-full bg-accent" />}
+            </>
+          ) : (
+            <Users className="mx-auto size-[18px]" />
+          )}
+        </Link>
+        <AccountButton />
+      </div>
     </header>
   );
 }
