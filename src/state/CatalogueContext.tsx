@@ -24,7 +24,10 @@ export function CatalogueProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let alive = true;
-    catalogueService.load().then((d) => alive && setData(d));
+    catalogueService
+      .load()
+      .then((d) => alive && setData(d))
+      .catch(() => alive && setData(catalogueData));
     return () => {
       alive = false;
     };

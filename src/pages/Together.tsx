@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy, Info, LogOut, Plus } from "lucide-react";
 import { cn } from "../utils/cn";
-import { DEMO_ROOM_CODE } from "../services";
+import { DEMO_ROOM_CODE, isSupabaseConfigured } from "../services";
 import { useCatalogue } from "../state/CatalogueContext";
 import { useLibrary } from "../state/LibraryContext";
 import { usePlayer } from "../state/PlayerContext";
@@ -110,7 +110,7 @@ export default function Together() {
                   <Button variant="secondary" type="submit" disabled={code.trim().length < 4}>Join</Button>
                 </div>
                 {room.error && <p className="mt-2 text-sm text-danger" role="alert">{room.error}</p>}
-                <p className="t-caption mt-2">Preview build — try the demo code {DEMO_ROOM_CODE}.</p>
+                {!isSupabaseConfigured && <p className="t-caption mt-2">Preview build — try the demo code {DEMO_ROOM_CODE}.</p>}
               </form>
             </section>
           ) : (
@@ -131,7 +131,7 @@ export default function Together() {
                   <Row label="Sync" value={live ? `In sync · ±${room.syncOffsetMs} ms` : "Waiting"} accent={live} />
                   <Row label="Queue" value={`Shared · ${player.upNext.length + (track ? 1 : 0)} songs`} />
                 </dl>
-                <p className="t-caption mt-3 flex items-start gap-2"><Info className="mt-px size-3.5 shrink-0" /> Simulated preview: {partner.name}'s presence and sync are local. Supabase Realtime will make this real.</p>
+                <p className="t-caption mt-3 flex items-start gap-2"><Info className="mt-px size-3.5 shrink-0" /> {isSupabaseConfigured ? `Live via Supabase Realtime — ${partner.name}'s presence and playback sync in real time.` : `Simulated preview: ${partner.name}'s presence and sync are local. Supabase Realtime will make this real.`}</p>
                 <Button variant="ghost" size="sm" className="-ml-3 mt-3 hover:text-danger" onClick={room.leaveRoom}><LogOut className="size-4" /> Leave room</Button>
               </section>
 
