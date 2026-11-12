@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { X } from "lucide-react";
 import { useUI } from "../../state/UIContext";
+import { DriveOnboarding } from "../auth/DriveOnboarding";
 import { ModalHost } from "../modals/ModalHost";
 import { MiniPlayer } from "../player/MiniPlayer";
 import { NowPlaying } from "../player/NowPlaying";
@@ -66,6 +67,7 @@ export function Shell() {
       </div>
 
       <NowPlaying />
+      <DriveOnboarding />
       <ModalHost />
       <Toaster />
     </div>

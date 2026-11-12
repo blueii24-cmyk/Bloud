@@ -7,6 +7,27 @@ import { useAuth } from "../state/AuthContext";
 type Problem = { message: string; field?: "email" | "password" } | null;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const OAUTH_RETURN_KEY = "bloud.auth-return";
+
+function safeReturnPath(path: string | null | undefined): string {
+  return path?.startsWith("/") && !path.startsWith("//") ? path : "/";
+}
+
+function storeOauthReturn(path: string) {
+  try {
+    sessionStorage.setItem(OAUTH_RETURN_KEY, path);
+  } catch {
+    /* OAuth still works; only the original route may be lost. */
+  }
+}
+
+function clearOauthReturn() {
+  try {
+    sessionStorage.removeItem(OAUTH_RETURN_KEY);
+  } catch {
+    /* session storage may be unavailable */
+  }
+}
 
 /** React implementation of the minimal login preview, wired to Bloud's real auth flow. */
 export default function Login() {
@@ -15,7 +36,15 @@ export default function Login() {
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const isSignup = params.get("mode") === "signup";
-  const from = (location.state as { from?: string } | null)?.from ?? "/";
+  const [oauthReturn, setOauthReturn] = useState(() => {
+    try {
+      return sessionStorage.getItem(OAUTH_RETURN_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const stateReturn = (location.state as { from?: string } | null)?.from;
+  const from = safeReturnPath(stateReturn || oauthReturn);
   const id = useId();
 
   const [email, setEmail] = useState("");
@@ -41,6 +70,23 @@ export default function Login() {
     [],
   );
 
+  useEffect(() => {
+    if (auth.status !== "authed") return;
+    clearOauthReturn();
+    setOauthReturn(null);
+  }, [auth.status]);
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const oauthError = query.get("error_description") || query.get("error");
+    if (!oauthError) return;
+    const lower = oauthError.toLowerCase();
+    const message = lower.includes("provider is not enabled") || lower.includes("unsupported provider")
+      ? "Google sign-in isn't enabled in Bloud yet. The administrator needs to configure Google under Supabase Auth."
+      : oauthError.replace(/\+/g, " ");
+    setProblem({ message });
+  }, []);
+
   function showToast(message: string) {
     if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
     setToast(message);
@@ -55,6 +101,29 @@ export default function Login() {
   function switchMode() {
     setProblem(null);
     setParams(isSignup ? {} : { mode: "signup" }, { replace: true, state: location.state });
+  }
+
+  async function onGoogleSignIn() {
+    if (busy) return;
+    setProblem(null);
+    setBusy(true);
+    try {
+      storeOauthReturn(from);
+      setOauthReturn(from);
+      const redirectTo = `${window.location.origin}${window.location.pathname}${window.location.search}${window.location.hash || "#/login"}`;
+      const result = await auth.signInWithGoogle(redirectTo);
+      if (result.error) {
+        clearOauthReturn();
+        setOauthReturn(null);
+        setProblem({ message: result.error });
+      }
+    } catch (error) {
+      clearOauthReturn();
+      setOauthReturn(null);
+      setProblem({ message: error instanceof Error ? error.message : "Couldn't start Google sign-in. Please try again." });
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -132,14 +201,16 @@ export default function Login() {
           <h1 id={`login-title-${id}`}>{isSignup ? "Create your account" : "Welcome back"}</h1>
         </header>
 
-        <button className="login-google" type="button" onClick={() => showToast("Google sign-in is preview-only here")}>
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" />
-            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z" />
-            <path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z" />
-            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z" />
-          </svg>
-          Continue with Google
+        <button className="login-google" type="button" onClick={onGoogleSignIn} disabled={busy} aria-busy={busy}>
+          {busy ? <Loader2 className="login-spinner" size={19} aria-hidden="true" /> : (
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" />
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z" />
+              <path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z" />
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z" />
+            </svg>
+          )}
+          {busy ? "Connecting to Google…" : "Continue with Google"}
         </button>
 
         <div className="login-separator" role="separator" aria-label="or">

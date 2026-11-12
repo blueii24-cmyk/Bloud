@@ -1,9 +1,10 @@
 import type { PlaybackEngine } from "./types";
 
 /**
- * Silent, clock-driven engine. It keeps accurate playback position so every
- * control (seek, progress, repeat, queue advance) behaves for real.
- * No audio is produced — swap in an <audio>-backed engine to stream media.
+ * Silent, clock-driven engine for bundled catalogue tracks. It keeps accurate
+ * playback position so demo controls work, but produces no audio. Authorized
+ * Google Drive songs use a separate real HTMLAudioElement in DriveMusic because
+ * the bundled catalogue has no media sources.
  */
 export function createSimulatedEngine(): PlaybackEngine {
   let duration = 0;

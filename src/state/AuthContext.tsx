@@ -12,6 +12,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
+import { deleteDriveSession } from "../services/googleDrive";
 
 const GUEST_KEY = "bloud.guest";
 // "Remember me" off → the session should end when the browser is closed. localStorage carries the
@@ -41,6 +42,7 @@ interface AuthApi {
   /** True when anonymous visitors must pass through /login. */
   walled: boolean;
   signIn: (email: string, password: string, remember: boolean) => Promise<AuthResult>;
+  signInWithGoogle: (redirectTo: string) => Promise<AuthResult>;
   signUp: (name: string, email: string, password: string, remember: boolean) => Promise<AuthResult>;
   continueAsGuest: () => void;
   signOut: () => Promise<void>;
@@ -95,14 +97,15 @@ function friendly(message: string): string {
     return "An account with this email already exists. Try logging in.";
   if (m.includes("rate limit") || m.includes("too many")) return "Too many attempts. Please wait a minute and try again.";
   if (m.includes("password") && m.includes("least")) return "Use at least 8 characters for your password.";
+  if (m.includes("provider is not enabled") || m.includes("unsupported provider")) return "Google sign-in isn't enabled in Bloud yet. The administrator needs to configure Google under Supabase Auth.";
   if (m.includes("failed to fetch") || m.includes("network")) return "Can't reach Bloud right now. Check your connection and try again.";
   return message;
 }
 
 function toUser(s: Session): AuthUser {
-  const meta = s.user.user_metadata as { display_name?: string } | undefined;
+  const meta = s.user.user_metadata as { display_name?: string; full_name?: string; name?: string } | undefined;
   const email = s.user.email ?? null;
-  return { id: s.user.id, email, name: meta?.display_name?.trim() || email?.split("@")[0] || "You" };
+  return { id: s.user.id, email, name: meta?.display_name?.trim() || meta?.full_name?.trim() || meta?.name?.trim() || email?.split("@")[0] || "You" };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -143,6 +146,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {};
   }, []);
 
+  const signInWithGoogle = useCallback<AuthApi["signInWithGoogle"]>(async (redirectTo) => {
+    if (!supabase) return { error: "Accounts aren't available in offline demo mode." };
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo },
+    });
+    if (error) return { error: friendly(error.message) };
+    setRemember(true);
+    writeGuest(false);
+    setGuest(false);
+    return {};
+  }, []);
+
   const signUp = useCallback<AuthApi["signUp"]>(async (name, email, password, remember) => {
     if (!supabase) return { error: "Accounts aren't available in offline demo mode." };
     const { data, error } = await supabase.auth.signUp({
@@ -170,6 +186,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     writeGuest(false);
     setGuest(false);
+    // Revoke and clear the per-user Drive session before the Supabase session goes away.
+    await deleteDriveSession().catch(() => undefined);
     if (supabase) await supabase.auth.signOut();
   }, []);
 
@@ -181,11 +199,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       configured: isSupabaseConfigured,
       walled: isSupabaseConfigured,
       signIn,
+      signInWithGoogle,
       signUp,
       continueAsGuest,
       signOut,
     };
-  }, [session, guest, signIn, signUp, continueAsGuest, signOut]);
+  }, [session, guest, signIn, signInWithGoogle, signUp, continueAsGuest, signOut]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

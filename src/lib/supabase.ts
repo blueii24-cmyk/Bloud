@@ -20,7 +20,8 @@ export const isSupabaseConfigured = Boolean(url && key);
 
 export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(url!, key!, {
-      auth: { persistSession: true, autoRefreshToken: true },
+      // PKCE returns OAuth codes in the query string so it can coexist with HashRouter's URL fragment.
+      auth: { persistSession: true, autoRefreshToken: true, flowType: "pkce" },
       realtime: { params: { eventsPerSecond: 10 } },
     })
   : null;

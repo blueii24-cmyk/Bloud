@@ -16,6 +16,12 @@ const isVercel = Boolean(process.env.VERCEL);
 export default defineConfig({
   base: isVercel ? "/" : "/Bloud/",
   plugins: [react(), tailwindcss()],
+  server: {
+    allowedHosts: [".e2b.app"],
+  },
+  define: {
+    __VERCEL__: JSON.stringify(isVercel),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
