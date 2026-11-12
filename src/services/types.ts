@@ -24,7 +24,7 @@ export interface LibraryService {
   subscribeRemote?(onChange: () => void): () => void;
 }
 
-/** Audio/video output. Future: HTMLAudioElement / MediaSource streaming from Drive. */
+/** Playback controls for the bundled catalogue engine; Drive tracks use a real HTMLAudioElement in DriveMusic. */
 export interface PlaybackEngine {
   load(trackId: string, durationSec: number, startAt?: number): void;
   play(): void;

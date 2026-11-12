@@ -37,22 +37,29 @@ services/ (Supabase when configured, else local mocks)
   `rooms` table; presence tracks online devices; broadcast + `room_playback`
   sync track changes and play/pause across devices. `RoomSyncBridge`
   (in `src/state/RoomContext.tsx`) connects the player to the room.
-- **Drive Music** (`src/pages/DriveMusic.tsx`): local folder scanning via
-  the File System Access API — files never leave the device.
+- **Drive Music** (`src/pages/DriveMusic.tsx`): optional per-user Google Drive connection with read-only consent, folder browsing, nested audio discovery, and real HTML audio playback. Vercel streams media through a same-origin, range-aware API; Google tokens are kept in HttpOnly cookies there and are never placed in media URLs. Non-Vercel development/static builds keep the short-lived Drive token in memory only and use a Blob fallback.
 
 ### Login (Supabase Auth)
 
-`/#/login` is a minimal sign-in / sign-up page based on the **Bloud — Minimal login preview** HTML, wired to Supabase Auth (email + password):
+`/#/login` retains the minimal Bloud login design and supports:
 
-* **Log in / Sign up** - `src/pages/Login.tsx` and its scoped `Login.css`, with session state in `src/state/AuthContext.tsx`. Sign-up derives the display name from the email address because the supplied design has no name field.
-* **Continue as guest** - the original demo mode (all devices share one library under user `me`). Stored as `bloud.guest` in `localStorage`.
-* **Google button** - preview-only notice; Google OAuth is not configured.
-* **Route guard** - `src/components/auth/RequireAuth.tsx` wraps the app shell; anonymous visitors are redirected to `/login` and returned to where they were headed.
-* **Offline** - without `VITE_SUPABASE_*` env vars there is nothing to log in to, so the wall is skipped and the app runs on bundled data exactly as before.
+* **Email/password login and signup** through Supabase Auth. Sign-up derives the display name from the email because the supplied design has no name field.
+* **Google sign-in** through Supabase OAuth. The original Google button now starts the provider redirect and returns users to the protected route they requested.
+* **Guest access** remains available with the original shared demo library under `me`.
+* **Optional Google Drive connection after login.** A one-time prompt offers a separate Google consent step; users can skip it and connect later from Drive Music. The requested Drive scope is read-only (`drive.readonly`), and the user can disconnect at any time. Drive access is bound to the signed-in Supabase user; guests do not get access to another user's Drive session.
+* **Drive Music** lets the user browse their Google Drive folders, scan a chosen folder and its subfolders for audio, then play songs through a real HTML audio element. Vercel's `/api/drive/*` functions proxy folder listing and range-based audio streaming. On Vercel, the Google access token is stored in a short-lived `HttpOnly` cookie, scoped to the Drive API, and is never added to URLs or browser storage. Local/non-Vercel builds use an in-memory token and download the selected song to a temporary Blob URL instead.
+* **Route protection** remains in `src/components/auth/RequireAuth.tsx`; guests still retain the existing demo access, and anonymous users are returned to the route they requested after sign-in.
+* **Offline mode** remains available without Supabase environment variables; the auth wall is skipped and the bundled demo runs as before.
 
-Supabase dashboard: enable the *Email* provider (Authentication -> Providers). If email confirmation is enabled, sign-up displays a notice to check the inbox; enable auto-confirm for instant sign-in. Add your site URL under Authentication -> URL Configuration.
+### Google OAuth setup (required before Google sign-in/Drive can work)
 
-RLS stays permissive for now (demo mode). To make libraries per-user, tighten policies to `auth.uid() = user_id` and link `app_users.auth_user_id`.
+1. In Google Cloud, create an OAuth **Web application** client and enable the Google Drive API. Add every app origin used for sign-in/Drive (for example `https://bloud-eta.vercel.app` and `http://localhost:5173`) to the client's authorized JavaScript origins. For Vercel preview domains, add the concrete preview origins you use.
+2. Add the Supabase callback URL `https://gaewxsaaaraafyeltiiv.supabase.co/auth/v1/callback` to the client's authorized redirect URIs.
+3. In Supabase **Authentication → Providers → Google**, enable Google and enter the Web client ID and client secret. The secret belongs only in Supabase's provider settings; do not put it in this repository, Vercel `VITE_*` variables, or chat. Keep the Supabase site URL and redirect allowlist configured for the production app and previews.
+4. Set `VITE_GOOGLE_CLIENT_ID` to the same **public client ID** in Vercel (Production and Preview). Set server-function environment variables `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` so the Drive API can verify the current Bloud user. The existing `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are still needed by the browser app.
+5. Add the `drive.readonly` scope to the Google OAuth consent screen and publish/allow test users as appropriate for your project. Drive consent is requested separately, after Bloud sign-in.
+
+Email auth and signup remain configured through Supabase. If email confirmation is enabled, signup displays a notice to check the inbox; auto-confirm can be enabled for instant sign-in. RLS stays permissive for now (demo mode); to make libraries per-user, tighten policies to `auth.uid() = user_id` and link `app_users.auth_user_id`.
 
 ## Local development
 
@@ -90,7 +97,9 @@ Tables: `app_users`, `artists`, `albums`, `tracks`, `videos`,
    - `VITE_SUPABASE_URL` — `https://gaewxsaaaraafyeltiiv.supabase.co`
    - `VITE_SUPABASE_PUBLISHABLE_KEY` — `sb_publishable_…`
      (or `VITE_SUPABASE_ANON_KEY` with the legacy anon JWT)
-3. Deploy. `vercel.json` handles SPA rewrites and asset caching.
+   - `VITE_GOOGLE_CLIENT_ID` — the public OAuth Web client ID from the setup above
+   - `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` — for Drive API user verification
+3. Deploy. `vercel.json` handles SPA rewrites and asset caching; `/api/drive/*` runs as Vercel Functions.
    `vite.config.ts` uses base `/` on Vercel and `/Bloud/` elsewhere
    (GitHub Pages).
 
