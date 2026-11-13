@@ -4,8 +4,10 @@ import {
 import { createSimulatedEngine } from "../services";
 import type { QueueItem, RepeatMode, Track, UserId } from "../types";
 import { shuffleArray } from "../utils/format";
+import { useAuth } from "./AuthContext";
 import { useCatalogue } from "./CatalogueContext";
 import { useLibrary } from "./LibraryContext";
+import { useUI } from "./UIContext";
 
 interface PlayContext {
   label: string;
@@ -17,6 +19,7 @@ interface PlayerState {
   upNext: QueueItem[];
   history: QueueItem[];
   playing: boolean;
+  seekRevision: number;
   shuffle: boolean;
   repeat: RepeatMode;
   volume: number;
@@ -49,6 +52,7 @@ interface PlayerActions {
   cycleRepeat(): void;
   setVolume(v: number): void;
   toggleMute(): void;
+  applyRemotePlayback(event: { trackId: string | null; queueTrackIds: string[]; queueAddedBy: UserId[]; positionSec: number; isPlaying: boolean }): void;
 }
 
 interface PlayerValue extends PlayerState, PlayerActions {
@@ -57,7 +61,7 @@ interface PlayerValue extends PlayerState, PlayerActions {
 
 const initialState: PlayerState = {
   current: null, upNext: [], history: [], playing: false, shuffle: false, repeat: "off",
-  volume: 0.8, muted: false, context: null, unshuffled: null,
+  volume: 0.8, muted: false, context: null, unshuffled: null, seekRevision: 0,
 };
 
 const Ctx = createContext<PlayerValue>(null!);
@@ -71,12 +75,22 @@ let uidCounter = 0;
 const makeItem = (trackId: string, addedBy: UserId = "me"): QueueItem => ({ uid: `q${++uidCounter}`, trackId, addedBy });
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
+  const auth = useAuth();
   const { ready, trackById } = useCatalogue();
   const library = useLibrary();
+  const ui = useUI();
   const [engine] = useState(createSimulatedEngine);
   const [state, setState] = useState<PlayerState>(initialState);
 
-  const stateRef = useRef(state);
+  const playbackScope = auth.status === "authed" && auth.user
+    ? `account:${auth.user.id}`
+    : auth.walled ? "signed-out" : "offline-demo";
+  const previousPlaybackScopeRef = useRef(playbackScope);
+  // Hide the previous account's queue synchronously on account changes; the
+  // effect below then resets the engine and state for the new scope.
+  const scopedState = previousPlaybackScopeRef.current === playbackScope ? state : initialState;
+  const stateRef = useRef(scopedState);
+  stateRef.current = scopedState;
   const tracksRef = useRef(trackById);
   tracksRef.current = trackById;
   const libRef = useRef(library);
@@ -105,6 +119,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [engine],
   );
 
+  useEffect(() => engine.onError((message) => {
+    const next = { ...stateRef.current, playing: false };
+    stateRef.current = next;
+    setState(next);
+    ui.notify(message);
+  }), [engine, ui.notify]);
+
   const actions = useMemo<PlayerActions>(() => {
     const commit = (next: PlayerState) => {
       stateRef.current = next;
@@ -113,7 +134,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const start = (item: QueueItem, startAt: number, play: boolean) => {
       const t = tracksRef.current.get(item.trackId);
       if (!t) return;
-      engine.load(t.id, t.duration, startAt);
+      engine.load(t.id, t.duration, startAt, t.audioUrl);
       if (play) {
         engine.play();
         libRef.current.pushHistory(t.id);
@@ -121,14 +142,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         engine.pause();
       }
     };
+    const setPosition = (seconds: number) => {
+      const current = stateRef.current;
+      engine.seek(seconds);
+      commit({ ...current, seekRevision: current.seekRevision + 1 });
+    };
 
     const advance = (auto: boolean) => {
       const s = stateRef.current;
       if (!s.current) return;
       if (auto && s.repeat === "one") {
-        engine.seek(0);
+        setPosition(0);
         engine.play();
-        commit({ ...s, playing: true });
+        commit({ ...stateRef.current, playing: true });
         return;
       }
       if (s.upNext.length) {
@@ -193,7 +219,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const s = stateRef.current;
         if (!s.current) return;
         if (progress.current > 3 || !s.history.length) {
-          engine.seek(0);
+          setPosition(0);
           return;
         }
         const prev = s.history[s.history.length - 1];
@@ -201,7 +227,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         start(prev, 0, true);
       },
 
-      seek: (sec) => engine.seek(sec),
+      seek: setPosition,
 
       skipTo(uid) {
         const s = stateRef.current;
@@ -278,6 +304,83 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         engine.setVolume(muted ? 0 : s.volume || 0.5);
         commit({ ...s, muted, volume: !muted && s.volume === 0 ? 0.5 : s.volume });
       },
+
+      applyRemotePlayback(event) {
+        const s = stateRef.current;
+        const requestedTrackId = typeof event.trackId === "string" ? event.trackId : null;
+        const remoteEntries = event.queueTrackIds
+          .slice(0, 200)
+          .map((trackId, index) => ({ trackId, addedBy: event.queueAddedBy[index] ?? "partner" }))
+          .filter((entry) => typeof entry.trackId === "string" && tracksRef.current.has(entry.trackId));
+        const safePosition = Number.isFinite(event.positionSec) ? Math.max(0, event.positionSec) : 0;
+
+        if (!requestedTrackId) {
+          const nextItems = remoteEntries.map((entry) => makeItem(entry.trackId, entry.addedBy));
+          const remoteIds = remoteEntries.map((entry) => entry.trackId);
+          engine.pause();
+          engine.load("", 0, 0);
+          progress.current = 0;
+          listeners.current.forEach((listener) => listener());
+          commit({
+            ...s,
+            current: null,
+            upNext: nextItems,
+            history: s.current ? [...s.history, s.current].slice(-50) : s.history,
+            playing: false,
+            context: nextItems.length ? { label: "Listen Together", trackIds: remoteIds } : null,
+            unshuffled: null,
+            seekRevision: s.seekRevision + 1,
+          });
+          return;
+        }
+
+        const track = tracksRef.current.get(requestedTrackId);
+        if (!track) return;
+        const currentIndex = remoteEntries.findIndex((entry) => entry.trackId === requestedTrackId);
+        let orderedEntries = remoteEntries;
+        if (currentIndex < 0) orderedEntries = [{ trackId: requestedTrackId, addedBy: "partner" }, ...remoteEntries];
+        else if (currentIndex > 0) orderedEntries = [...remoteEntries.slice(currentIndex), ...remoteEntries.slice(0, currentIndex)];
+        const orderedIds = orderedEntries.map((entry) => entry.trackId);
+
+        const previousQueue = [s.current, ...s.upNext].filter((item): item is QueueItem => item !== null);
+        const items = orderedEntries.map((entry, index) => {
+          const previous = previousQueue[index];
+          return previous?.trackId === entry.trackId
+            ? { ...previous, addedBy: entry.addedBy }
+            : makeItem(entry.trackId, entry.addedBy);
+        });
+        const current = items[0] ?? makeItem(requestedTrackId, "partner");
+        const sameTrack = s.current?.trackId === requestedTrackId;
+        const position = Math.min(safePosition, track.duration || safePosition);
+        const needsSeek = sameTrack && Math.abs(progress.current - position) > 2;
+        const next: PlayerState = {
+          ...s,
+          current,
+          upNext: items.slice(1),
+          history: sameTrack || !s.current ? s.history : [...s.history, s.current].slice(-50),
+          playing: event.isPlaying,
+          shuffle: false,
+          context: { label: "Listen Together", trackIds: orderedIds },
+          unshuffled: null,
+          seekRevision: s.seekRevision + (needsSeek || !sameTrack ? 1 : 0),
+        };
+        commit(next);
+
+        if (sameTrack) {
+          if (needsSeek) engine.seek(position);
+          if (event.isPlaying && !s.playing) engine.play();
+          else if (!event.isPlaying && s.playing) engine.pause();
+          return;
+        }
+
+        engine.load(track.id, track.duration, position, track.audioUrl);
+        if (event.isPlaying) {
+          engine.play();
+          libRef.current.pushHistory(track.id);
+        } else {
+          engine.pause();
+        }
+      },
     };
   }, [engine]);
 
@@ -290,7 +393,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (!s.current) return;
       // `next` semantics, but repeat-one loops the same track
       if (s.repeat === "one") {
-        engine.seek(0);
+        advanceRef.current.seek(0);
         engine.play();
         return;
       }
@@ -298,8 +401,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     });
   }, [engine]);
 
-  // Prime the player once the catalogue is available so the app never feels empty.
+  // Playback queues are session-scoped; never carry one account's queue into another.
   const primed = useRef(false);
+  useEffect(() => {
+    if (previousPlaybackScopeRef.current === playbackScope) return;
+    previousPlaybackScopeRef.current = playbackScope;
+    engine.pause();
+    engine.load("", 0, 0);
+    progress.current = 0;
+    listeners.current.forEach((listener) => listener());
+    stateRef.current = initialState;
+    setState(initialState);
+    primed.current = false;
+  }, [playbackScope, engine]);
+
+  // Prime the player once the catalogue is available so the app never feels empty.
   useEffect(() => {
     if (!ready || primed.current) return;
     primed.current = true;
@@ -314,14 +430,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     stateRef.current = next;
     setState(next);
     const t = tracksRef.current.get(current.trackId);
-    if (t) engine.load(t.id, t.duration, 47);
+    if (t) engine.load(t.id, t.duration, 47, t.audioUrl);
   }, [ready, engine]);
 
   useEffect(() => () => engine.pause(), [engine]);
 
   const value = useMemo<PlayerValue>(
-    () => ({ ...state, ...actions, track: state.current ? trackById.get(state.current.trackId) ?? null : null }),
-    [state, actions, trackById],
+    () => ({ ...scopedState, ...actions, track: scopedState.current ? trackById.get(scopedState.current.trackId) ?? null : null }),
+    [scopedState, actions, trackById],
   );
 
   return (

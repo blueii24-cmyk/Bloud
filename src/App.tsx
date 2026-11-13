@@ -7,6 +7,7 @@ import { LibraryProvider } from "./state/LibraryContext";
 import { PlayerProvider } from "./state/PlayerContext";
 import { RoomSyncBridge } from "./state/RoomContext";
 import { UIProvider } from "./state/UIContext";
+import { WorkspaceProvider } from "./state/WorkspaceContext";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Library from "./pages/Library";
@@ -24,32 +25,34 @@ export default function App() {
   return (
     <GoogleDriveProvider>
       <UIProvider>
-        <CatalogueProvider>
-          <LibraryProvider>
-            <PlayerProvider>
-              <RoomSyncBridge />
-              <HashRouter>
-                <Routes>
-                  <Route path="login" element={<Login />} />
-                  <Route element={<RequireAuth />}>
-                    <Route element={<Shell />}>
-                      <Route index element={<Home />} />
-                      <Route path="search" element={<Search />} />
-                      <Route path="library" element={<Library />} />
-                      <Route path="liked" element={<LikedPage />} />
-                      <Route path="playlist/:id" element={<PlaylistPage />} />
-                      <Route path="album/:id" element={<AlbumPage />} />
-                      <Route path="artist/:id" element={<ArtistPage />} />
-                      <Route path="together" element={<Together />} />
-                      <Route path="drive" element={<DriveMusic />} />
-                      <Route path="*" element={<Navigate to="/" replace />} />
+        <WorkspaceProvider>
+          <CatalogueProvider>
+            <LibraryProvider>
+              <PlayerProvider>
+                <RoomSyncBridge />
+                <HashRouter>
+                  <Routes>
+                    <Route path="login" element={<Login />} />
+                    <Route element={<RequireAuth />}>
+                      <Route element={<Shell />}>
+                        <Route index element={<Home />} />
+                        <Route path="search" element={<Search />} />
+                        <Route path="library" element={<Library />} />
+                        <Route path="liked" element={<LikedPage />} />
+                        <Route path="playlist/:id" element={<PlaylistPage />} />
+                        <Route path="album/:id" element={<AlbumPage />} />
+                        <Route path="artist/:id" element={<ArtistPage />} />
+                        <Route path="together" element={<Together />} />
+                        <Route path="drive" element={<DriveMusic />} />
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                      </Route>
                     </Route>
-                  </Route>
-                </Routes>
-              </HashRouter>
-            </PlayerProvider>
-          </LibraryProvider>
-        </CatalogueProvider>
+                  </Routes>
+                </HashRouter>
+              </PlayerProvider>
+            </LibraryProvider>
+          </CatalogueProvider>
+        </WorkspaceProvider>
       </UIProvider>
     </GoogleDriveProvider>
   );

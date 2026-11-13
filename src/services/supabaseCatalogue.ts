@@ -3,6 +3,7 @@
  * Returns null when Supabase is unconfigured / unreachable / empty so the
  * caller can fall back to the bundled sample catalogue.
  */
+import { catalogueData } from "../data/catalogue";
 import { supabase } from "../lib/supabase";
 import type {
   Album,
@@ -12,7 +13,6 @@ import type {
   Category,
   Playlist,
   Track,
-  User,
   UserId,
   Video,
 } from "../types";
@@ -24,8 +24,19 @@ const art = (row: Row): ArtSpec => row.art as ArtSpec;
 export async function loadCatalogueFromSupabase(): Promise<Catalogue | null> {
   if (!supabase) return null;
   try {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) return null;
+    const userId = authData.user.id;
+
+    // The forward security migration is a hard cloud-readiness gate. Without
+    // its Auth-bound RPC, do not touch tables that may still have legacy demo RLS.
+    const { error: securityMigrationError } = await supabase.rpc("get_my_workspace");
+    if (securityMigrationError) {
+      console.warn("[bloud] private cloud migration is not ready; using local catalogue:", securityMigrationError.message);
+      return null;
+    }
+
     const [
-      usersRes,
       artistsRes,
       albumsRes,
       tracksRes,
@@ -36,7 +47,6 @@ export async function loadCatalogueFromSupabase(): Promise<Catalogue | null> {
       itemsRes,
       continueRes,
     ] = await Promise.all([
-      supabase.from("app_users").select("*"),
       supabase.from("artists").select("*").order("name"),
       supabase.from("albums").select("*").order("added_at", { ascending: false }),
       supabase.from("tracks").select("*").order("album_id").order("position"),
@@ -45,11 +55,10 @@ export async function loadCatalogueFromSupabase(): Promise<Catalogue | null> {
       supabase.from("lyrics_sets").select("*").order("id"),
       supabase.from("playlists").select("*").eq("kind", "mix"),
       supabase.from("playlist_items").select("*").order("position"),
-      supabase.from("continue_listening").select("*").eq("user_id", "me"),
+      supabase.from("continue_listening").select("*").eq("user_id", userId),
     ]);
 
     const firstError = [
-      usersRes.error,
       artistsRes.error,
       albumsRes.error,
       tracksRes.error,
@@ -65,21 +74,9 @@ export async function loadCatalogueFromSupabase(): Promise<Catalogue | null> {
       return null;
     }
 
-    const usersRows = (usersRes.data ?? []) as Row[];
-    if (!usersRows.length || !(tracksRes.data ?? []).length) return null;
-
-    const users = {} as Record<UserId, User>;
-    for (const r of usersRows) {
-      users[r.id as UserId] = {
-        id: r.id as UserId,
-        name: String(r.display_name),
-        initials: String(r.initials),
-        colors: [String(r.color_a), String(r.color_b)],
-      };
-    }
-    // Guarantee both demo identities exist even if the table is partial.
-    users.me ??= { id: "me", name: "Alex", initials: "A", colors: ["#4fe3a1", "#1a8f68"] };
-    users.partner ??= { id: "partner", name: "Sam", initials: "S", colors: ["#ff8fb1", "#b43d78"] };
+    const { data: currentAuth, error: currentAuthError } = await supabase.auth.getUser();
+    if (currentAuthError || currentAuth.user?.id !== userId) return null;
+    if (!(tracksRes.data ?? []).length) return null;
 
     const artists: Artist[] = ((artistsRes.data ?? []) as Row[]).map((r) => ({
       id: String(r.id),
@@ -112,6 +109,7 @@ export async function loadCatalogueFromSupabase(): Promise<Catalogue | null> {
       addedAt: String(r.added_at),
       lyricSet: (r.lyric_set as number | null) ?? null,
       explicit: Boolean(r.explicit ?? false),
+      audioUrl: typeof r.audio_url === "string" ? r.audio_url : undefined,
     }));
 
     const videos: Video[] = ((videosRes.data ?? []) as Row[]).map((r) => ({
@@ -169,7 +167,7 @@ export async function loadCatalogueFromSupabase(): Promise<Catalogue | null> {
     }));
 
     return {
-      users,
+      users: catalogueData.users,
       tracks,
       albums,
       artists,

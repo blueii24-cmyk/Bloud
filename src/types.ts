@@ -51,6 +51,8 @@ export interface Track {
   addedAt: string;
   lyricSet: number | null;
   explicit?: boolean;
+  /** Optional playable media source supplied by the catalogue backend. */
+  audioUrl?: string;
 }
 
 export interface Video {
@@ -68,6 +70,7 @@ export interface PlaylistItem {
   trackId: string;
   addedBy: UserId;
   addedAt: number;
+  position?: number;
 }
 
 export interface Playlist {
@@ -75,6 +78,10 @@ export interface Playlist {
   name: string;
   description: string;
   ownerId: UserId | "tandem";
+  /** Verified Auth UUID, present on account-owned playlists (never from legacy `me` rows). */
+  ownerUserId?: string | null;
+  /** Workspace that grants collaborative access; RLS remains the authority. */
+  workspaceId?: string | null;
   collaborative: boolean;
   kind: "user" | "mix";
   items: PlaylistItem[];

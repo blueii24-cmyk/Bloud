@@ -5,6 +5,8 @@ import { cn } from "../../utils/cn";
 import type { Playlist, Track } from "../../types";
 import { useCatalogue } from "../../state/CatalogueContext";
 import { useLibrary } from "../../state/LibraryContext";
+import { useAuth } from "../../state/AuthContext";
+import { useWorkspace } from "../../state/WorkspaceContext";
 import { usePlayer } from "../../state/PlayerContext";
 import { useRoom } from "../../state/RoomContext";
 import { isSupabaseConfigured } from "../../services";
@@ -89,6 +91,8 @@ function PlaylistEditor({ playlistId, onClose }: { playlistId: string; onClose: 
   const ui = useUI();
   const nav = useNavigate();
   const { data } = useCatalogue();
+  const auth = useAuth();
+  const workspace = useWorkspace();
   const playlist = lib.playlists.find((p) => p.id === playlistId);
   const [name, setName] = useState(playlist?.name ?? "");
   const [description, setDescription] = useState(playlist?.description ?? "");
@@ -96,9 +100,12 @@ function PlaylistEditor({ playlistId, onClose }: { playlistId: string; onClose: 
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (!playlist) return null;
+  const canManage = !auth.walled || playlist.ownerUserId === auth.user?.id;
+  if (!canManage) return null;
+  const canEnableCollaboration = !auth.walled || workspace.paired;
   const save = () => {
-    lib.updatePlaylist(playlist.id, { name: name.trim() || playlist.name, description: description.trim(), collaborative: collab });
-    ui.notify("Playlist updated");
+    const updated = lib.updatePlaylist(playlist.id, { name: name.trim() || playlist.name, description: description.trim(), collaborative: collab });
+    ui.notify(updated ? "Playlist updated" : "Pair a second account before enabling collaboration");
     onClose();
   };
 
@@ -161,13 +168,22 @@ function PlaylistEditor({ playlistId, onClose }: { playlistId: string; onClose: 
           type="button"
           role="switch"
           aria-checked={collab}
+          disabled={!canEnableCollaboration && !collab}
           onClick={() => setCollab(!collab)}
-          className="flex w-full items-center gap-3 rounded-lg bg-white/[0.06] p-3 text-left transition hover:bg-white/10"
+          className={cn("flex w-full items-center gap-3 rounded-lg bg-white/[0.06] p-3 text-left transition", canEnableCollaboration || collab ? "hover:bg-white/10" : "cursor-not-allowed opacity-60")}
         >
           <Users className="size-5 shrink-0 text-fg-2" />
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium">Collaborative with {data.users.partner.name}</span>
-            <span className="t-caption block">Both of you can add songs; each addition shows who added it.</span>
+            <span className="t-caption block">
+              {workspace.paired
+                ? "Both workspace members can add songs; each addition shows who added it."
+                : auth.walled && workspace.id
+                  ? "Invite one other account to this workspace before enabling sharing."
+                  : auth.walled
+                    ? "Create a two-person workspace in Listen Together to enable sharing."
+                    : "Offline demo: collaboration is saved locally on this device."}
+            </span>
           </span>
           <span className={cn("relative h-6 w-10 shrink-0 rounded-full transition-colors duration-200", collab ? "bg-accent" : "bg-white/25")}>
             <span className={cn("absolute top-1 size-4 rounded-full bg-white shadow transition-[left] duration-200", collab ? "left-5 bg-black" : "left-1")} />
@@ -196,10 +212,16 @@ function AddSongs({ target, onClose }: { target: { kind: "playlist"; id: string 
   }, [q, data, lib.likedIds, lib.playHistory]);
 
   const add = (t: Track) => {
-    if (target.kind === "playlist") lib.addToPlaylist(target.id, [t.id]);
-    else player.addToQueue([t.id]);
+    if (target.kind === "playlist") {
+      if (!lib.addToPlaylist(target.id, [t.id])) {
+        ui.notify("Couldn't add this song to the playlist.");
+        return;
+      }
+    } else {
+      player.addToQueue([t.id]);
+    }
     setAdded((s) => new Set(s).add(t.id));
-    ui.notify(target.kind === "queue" ? "Added to queue" : `Added to ${playlist?.name}`);
+    ui.notify(target.kind === "queue" ? "Added to queue" : `Added to ${playlist?.name ?? "playlist"}`);
   };
 
   return (

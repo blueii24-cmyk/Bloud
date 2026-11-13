@@ -10,7 +10,7 @@ export const DEMO_ROOM_CODE = "TNDM-4821";
  */
 export function createMockRoomService(): RoomService {
   let state: RoomState = {
-    status: "idle", code: null, simulated: true, syncOffsetMs: 0, error: null,
+    status: "idle", code: null, isHost: false, simulated: true, syncOffsetMs: 0, error: null,
     members: [{ userId: "me", online: true }, { userId: "partner", online: false }],
   };
   const listeners = new Set<() => void>();
@@ -42,25 +42,25 @@ export function createMockRoomService(): RoomService {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    createRoom() {
+    async createRoom() {
       clear();
-      set({ status: "waiting", code: DEMO_ROOM_CODE, error: null, members: [{ userId: "me", online: true }, { userId: "partner", online: false }] });
+      set({ status: "waiting", code: DEMO_ROOM_CODE, isHost: true, error: null, members: [{ userId: "me", online: true }, { userId: "partner", online: false }] });
       partnerJoins(1800);
     },
-    joinRoom(code) {
+    async joinRoom(code) {
       const clean = code.trim().toUpperCase();
       if (clean !== DEMO_ROOM_CODE) {
         set({ error: "We couldn't find that room. Check the code and try again." });
         return false;
       }
       clear();
-      set({ status: "waiting", code: clean, error: null });
+      set({ status: "waiting", code: clean, isHost: false, error: null });
       partnerJoins(600);
       return true;
     },
     leaveRoom() {
       clear();
-      set({ status: "idle", code: null, error: null, syncOffsetMs: 0, members: [{ userId: "me", online: true }, { userId: "partner", online: false }] });
+      set({ status: "idle", code: null, isHost: false, error: null, syncOffsetMs: 0, members: [{ userId: "me", online: true }, { userId: "partner", online: false }] });
     },
   };
 }

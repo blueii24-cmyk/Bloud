@@ -4,8 +4,8 @@ import { LogoMark } from "../ui/Bits";
 
 /**
  * Route guard for the app shell.
- * Lets through: signed-in users, guests (demo mode) and everyone when Supabase isn't configured.
- * Everyone else is sent to /login and bounced back to where they were headed afterwards.
+ * Cloud mode only admits users with a Supabase Auth session. The bundled demo
+ * is available when Supabase is not configured and never uses a cloud identity.
  */
 export function RequireAuth() {
   const { status, walled } = useAuth();
@@ -18,7 +18,7 @@ export function RequireAuth() {
       </div>
     );
   }
-  if (walled && status === "anon") {
+  if (walled && status !== "authed") {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
   return <Outlet />;

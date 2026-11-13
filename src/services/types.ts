@@ -17,22 +17,24 @@ export interface CatalogueService {
  * and subscribes to `subscribeRemote` for cross-device updates.
  */
 export interface LibraryService {
-  load(): LibraryState;
-  save(state: LibraryState): void;
-  loadRemote?(): Promise<LibraryState | null>;
-  saveRemote?(prev: LibraryState, next: LibraryState): Promise<void>;
-  subscribeRemote?(onChange: () => void): () => void;
+  /** A local cache scope is either `offline-demo` or a verified Auth UUID. */
+  load(scopeKey: string): LibraryState;
+  save(state: LibraryState, scopeKey: string): void;
+  loadRemote?(expectedUserId: string): Promise<LibraryState | null>;
+  saveRemote?(prev: LibraryState, next: LibraryState, expectedUserId: string, workspaceId: string | null): Promise<void>;
+  subscribeRemote?(onChange: () => void, expectedUserId: string, workspaceId: string | null): () => void;
 }
 
-/** Playback controls for the bundled catalogue engine; Drive tracks use a real HTMLAudioElement in DriveMusic. */
+/** Catalogue playback controls; explicit media URLs use HTMLAudioElement, source-less preview tracks use a silent clock. */
 export interface PlaybackEngine {
-  load(trackId: string, durationSec: number, startAt?: number): void;
+  load(trackId: string, durationSec: number, startAt?: number, source?: string): void;
   play(): void;
   pause(): void;
   seek(seconds: number): void;
   setVolume(volume: number): void;
   onTick(cb: (positionSec: number) => void): () => void;
   onEnded(cb: () => void): () => void;
+  onError(cb: (message: string) => void): () => void;
   destroy(): void;
 }
 
@@ -41,6 +43,8 @@ export type RoomStatus = "idle" | "waiting" | "live";
 export interface RoomState {
   status: RoomStatus;
   code: string | null;
+  /** Only the account that created the room bootstraps an empty playback snapshot. */
+  isHost: boolean;
   members: { userId: UserId; online: boolean }[];
   /** true while running on local simulation rather than a real backend */
   simulated: boolean;
@@ -56,6 +60,8 @@ export interface PlaybackSyncEvent {
   positionSec: number;
   isPlaying: boolean;
   queueTrackIds: string[];
+  /** Auth UUID of the account that added each queue item, parallel to queueTrackIds. */
+  queueAdderIds: string[];
   clientId: string;
   ts: number;
 }
@@ -64,8 +70,8 @@ export interface PlaybackSyncEvent {
 export interface RoomService {
   getState(): RoomState;
   subscribe(listener: () => void): () => void;
-  createRoom(): void;
-  joinRoom(code: string): boolean;
+  createRoom(): Promise<void>;
+  joinRoom(code: string): Promise<boolean>;
   leaveRoom(): void;
   broadcastPlayback?(event: Omit<PlaybackSyncEvent, "clientId" | "ts">): void;
   onPlaybackEvent?(cb: (event: PlaybackSyncEvent) => void): () => void;
