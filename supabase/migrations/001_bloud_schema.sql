@@ -10,9 +10,10 @@
 --   recent_searches / play_history / continue_listening            per-user state
 --   rooms / room_members / room_playback / room_events             Listen Together
 --
--- RLS is ON everywhere. Policies are permissive for anon + authenticated
--- because the app currently runs in demo mode (no login wall). When Supabase
--- Auth is enabled, tighten policies to `auth.uid() = user_id` per row.
+-- Historical baseline: the original demo used permissive policies for anon
+-- and authenticated roles. Cloud deployments must apply the forward-only
+-- private-workspace migration (20261112030000_private_workspace_security.sql)
+-- immediately after this schema; do not use this baseline alone in production.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -246,7 +247,8 @@ create trigger trg_room_playback_updated
   for each row execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- Row Level Security (demo-permissive; tighten when Auth is enabled)
+-- Secure defaults: RLS is on and no client role receives broad demo access.
+-- The forward private-workspace migration adds only Auth-bound policies.
 -- ---------------------------------------------------------------------------
 alter table public.app_users enable row level security;
 alter table public.artists enable row level security;
@@ -267,24 +269,6 @@ alter table public.rooms enable row level security;
 alter table public.room_members enable row level security;
 alter table public.room_playback enable row level security;
 alter table public.room_events enable row level security;
-
-do $$
-declare
-  t text;
-begin
-  foreach t in array array[
-    'app_users','artists','albums','tracks','videos','categories','lyrics_sets',
-    'playlists','playlist_items','liked_tracks','saved_albums','followed_artists',
-    'recent_searches','play_history','continue_listening',
-    'rooms','room_members','room_playback','room_events'
-  ] loop
-    execute format('drop policy if exists "demo_all" on public.%I', t);
-    execute format(
-      'create policy "demo_all" on public.%I for all to anon, authenticated using (true) with check (true)',
-      t
-    );
-  end loop;
-end $$;
 
 -- ---------------------------------------------------------------------------
 -- Realtime: publish tables the frontend subscribes to

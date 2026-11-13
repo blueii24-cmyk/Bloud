@@ -4,6 +4,8 @@ import type { Track, UserId } from "../types";
 import { formatTotal, plural } from "../utils/format";
 import { useCatalogue } from "../state/CatalogueContext";
 import { useLibrary } from "../state/LibraryContext";
+import { useAuth } from "../state/AuthContext";
+import { useWorkspace } from "../state/WorkspaceContext";
 import { usePlayer } from "../state/PlayerContext";
 import { useUI } from "../state/UIContext";
 import { CollectionActions, CollectionHeader, EmptyState } from "../components/media/Collection";
@@ -51,6 +53,8 @@ export function PlaylistPage() {
   const { ready, data, trackById } = useCatalogue();
   const lib = useLibrary();
   const ui = useUI();
+  const auth = useAuth();
+  const workspace = useWorkspace();
   const playlist = lib.getPlaylist(id);
   const items = (playlist?.items ?? []).map((i) => ({ ...i, track: trackById.get(i.trackId) })).filter((i): i is typeof i & { track: Track } => !!i.track);
   const ids = items.map((i) => i.track.id);
@@ -60,7 +64,12 @@ export function PlaylistPage() {
   if (!playlist) return <NotFound what="Playlist" />;
   if (!ready) return <PageSkeleton />;
 
-  const editable = playlist.kind === "user";
+  const canManage = !auth.walled || playlist.ownerUserId === auth.user?.id;
+  const editable = playlist.kind === "user" && (
+    !auth.walled
+    || canManage
+    || (playlist.collaborative && workspace.paired && workspace.id !== null && playlist.workspaceId === workspace.id)
+  );
   const total = items.reduce((s, i) => s + i.track.duration, 0);
   const owner = playlist.ownerId === "tandem" ? null : data.users[playlist.ownerId];
 
@@ -91,14 +100,14 @@ export function PlaylistPage() {
 
       <CollectionActions playing={pb.playing} onPlay={items.length ? pb.toggle : () => ui.openModal({ type: "addSongs", target: { kind: "playlist", id: playlist.id } })} onShuffle={items.length ? pb.shuffle : undefined}>
         {editable && (
-          <>
-            <IconButton label="Add songs" size="lg" onClick={() => ui.openModal({ type: "addSongs", target: { kind: "playlist", id: playlist.id } })}>
-              <Plus className="size-6" />
-            </IconButton>
-            <IconButton label="Edit playlist" size="lg" onClick={() => ui.openModal({ type: "edit", playlistId: playlist.id })}>
-              <Pencil className="size-[22px]" />
-            </IconButton>
-          </>
+          <IconButton label="Add songs" size="lg" onClick={() => ui.openModal({ type: "addSongs", target: { kind: "playlist", id: playlist.id } })}>
+            <Plus className="size-6" />
+          </IconButton>
+        )}
+        {editable && canManage && (
+          <IconButton label="Edit playlist" size="lg" onClick={() => ui.openModal({ type: "edit", playlistId: playlist.id })}>
+            <Pencil className="size-[22px]" />
+          </IconButton>
         )}
         {playlist.collaborative && (
           <span className="t-meta ml-auto hidden items-center gap-1.5 sm:flex"><Users className="size-4" /> Both can add songs</span>

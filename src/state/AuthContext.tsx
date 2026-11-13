@@ -1,13 +1,10 @@
 /**
  * Auth state for the login page.
  *
- * Three ways to be "in":
- *   - authed : a Supabase Auth session (email + password)
- *   - guest  : demo mode, the app's original behaviour (shared library under user `me`)
- *   - anon   : neither → RequireAuth sends you to /login
- *
- * When Supabase isn't configured (no env vars) the app keeps running fully offline,
- * so the login wall is skipped entirely (see `walled`).
+ * Cloud mode admits only a Supabase Auth session. Guest mode is a local-only
+ * demo identity and is never accepted when Supabase is configured. Without
+ * Supabase environment variables, the login wall is skipped and local demo data
+ * remains available offline (see `walled`).
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
@@ -118,16 +115,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let alive = true;
     const client = supabase;
     (async () => {
-      if (ephemeralSessionExpired()) {
-        await client.auth.signOut();
-        try {
-          localStorage.removeItem(EPHEMERAL_KEY);
-        } catch {
-          /* ignore */
+      try {
+        if (ephemeralSessionExpired()) {
+          await client.auth.signOut();
+          try {
+            localStorage.removeItem(EPHEMERAL_KEY);
+          } catch {
+            /* ignore */
+          }
         }
+        const { data, error } = await client.auth.getSession();
+        if (alive) setSession(error ? null : data.session);
+      } catch {
+        if (alive) setSession(null);
       }
-      const { data } = await client.auth.getSession();
-      if (alive) setSession(data.session);
     })();
     const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
     return () => {
@@ -179,6 +180,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const continueAsGuest = useCallback(() => {
+    // A guest is a local demo identity only. Never let it pass the cloud auth wall.
+    if (isSupabaseConfigured) return;
     writeGuest(true);
     setGuest(true);
   }, []);
@@ -192,7 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthApi>(() => {
-    const status: AuthStatus = session === undefined ? "loading" : session ? "authed" : guest ? "guest" : "anon";
+    const status: AuthStatus = session === undefined ? "loading" : session ? "authed" : !isSupabaseConfigured && guest ? "guest" : "anon";
     return {
       status,
       user: session ? toUser(session) : null,

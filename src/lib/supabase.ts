@@ -26,13 +26,6 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
     })
   : null;
 
-/**
- * Demo library owner. The app ships without a login wall, so all devices
- * share one library under `me` (cross-device sync out of the box).
- * When Supabase Auth is enabled, replace with `auth.getUser()` id.
- */
-export const LIBRARY_USER_ID = "me";
-
 /** Stable per-browser device id for room presence (survives reloads). */
 export function getDeviceId(): string {
   const KEY = "bloud.deviceId";

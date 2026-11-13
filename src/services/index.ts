@@ -24,32 +24,57 @@ export const catalogueService: CatalogueService = {
     if (isSupabaseConfigured) {
       const remote = await loadCatalogueFromSupabase();
       if (remote) return remote;
+      // Never fall back to the bundled demo's personal listening history for an account.
+      return new Promise<Catalogue>((resolve) => setTimeout(() => resolve({ ...catalogueData, continueListening: [] }), 650));
     }
     return new Promise<Catalogue>((resolve) => setTimeout(() => resolve(catalogueData), 650));
   },
 };
 
-const STORAGE_KEY = "tandem.library.v1";
+const LIBRARY_CACHE_PREFIX = "bloud.library.v2:";
+const LEGACY_DEMO_CACHE_KEY = "tandem.library.v1";
+const emptyLibrary: LibraryState = {
+  likedIds: [], savedAlbumIds: [], followedArtistIds: [], playlists: [],
+  recentSearches: [], playHistory: [],
+};
+
+function validLibrary(value: unknown, fallback: LibraryState): LibraryState {
+  if (!value || typeof value !== "object") return fallback;
+  const parsed = value as Partial<LibraryState>;
+  return {
+    likedIds: Array.isArray(parsed.likedIds) ? parsed.likedIds.filter((id): id is string => typeof id === "string") : fallback.likedIds,
+    savedAlbumIds: Array.isArray(parsed.savedAlbumIds) ? parsed.savedAlbumIds.filter((id): id is string => typeof id === "string") : fallback.savedAlbumIds,
+    followedArtistIds: Array.isArray(parsed.followedArtistIds) ? parsed.followedArtistIds.filter((id): id is string => typeof id === "string") : fallback.followedArtistIds,
+    playlists: Array.isArray(parsed.playlists) ? parsed.playlists as LibraryState["playlists"] : fallback.playlists,
+    recentSearches: Array.isArray(parsed.recentSearches) ? parsed.recentSearches.filter((q): q is string => typeof q === "string") : fallback.recentSearches,
+    playHistory: Array.isArray(parsed.playHistory) ? parsed.playHistory.filter((id): id is string => typeof id === "string") : fallback.playHistory,
+  };
+}
 
 /**
- * Library: localStorage is the instant cache; Supabase is the source of
- * truth for cross-device sync when configured.
+ * Cloud caches are strictly account-scoped. The legacy shared cache is read
+ * only in offline demo mode and is never copied into a signed-in account.
  */
 export const libraryService: LibraryService = {
-  load(): LibraryState {
+  load(scopeKey) {
+    const fallback = scopeKey === "offline-demo" ? seedLibrary : emptyLibrary;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return { ...seedLibrary, ...JSON.parse(raw) } as LibraryState;
+      const raw = localStorage.getItem(`${LIBRARY_CACHE_PREFIX}${scopeKey}`);
+      if (raw) return validLibrary(JSON.parse(raw), fallback);
+      if (scopeKey === "offline-demo") {
+        const legacy = localStorage.getItem(LEGACY_DEMO_CACHE_KEY);
+        if (legacy) return validLibrary(JSON.parse(legacy), seedLibrary);
+      }
     } catch {
-      /* ignore corrupt storage */
+      /* Corrupt or unavailable storage only removes the local cache. */
     }
-    return seedLibrary;
+    return fallback;
   },
-  save(state) {
+  save(state, scopeKey) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(`${LIBRARY_CACHE_PREFIX}${scopeKey}`, JSON.stringify(state));
     } catch {
-      /* storage full or unavailable */
+      /* Storage quota/private mode: remote sync can still succeed. */
     }
   },
   loadRemote: isSupabaseConfigured ? loadLibraryFromSupabase : undefined,

@@ -94,7 +94,7 @@ export default function Login() {
   }
 
   // Already in (or no Supabase to log in to): nothing to do here.
-  if (auth.status === "authed" || auth.status === "guest" || !auth.walled) {
+  if (auth.status === "authed" || !auth.walled) {
     return <Navigate to={from} replace />;
   }
 
@@ -165,11 +165,6 @@ export default function Login() {
     } finally {
       setBusy(false);
     }
-  }
-
-  function continueAsGuest() {
-    auth.continueAsGuest();
-    nav(from, { replace: true });
   }
 
   return (
@@ -268,7 +263,6 @@ export default function Login() {
         </form>
 
         <footer className="login-foot">
-          <button className="login-link" type="button" onClick={continueAsGuest} disabled={busy}>Continue as guest</button>
           <p>
             <span>{isSignup ? "Have an account?" : "New here?"}</span>{" "}
             <button className="login-link login-switch" type="button" onClick={switchMode} disabled={busy}>
